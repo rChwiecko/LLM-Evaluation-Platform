@@ -1,0 +1,68 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL") // Add this in your .env file
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  password  String
+  createdAt DateTime @default(now())
+  experiments Experiment[]
+}
+
+model Experiment {
+  id            Int           @id @default(autoincrement())
+  name          String
+  systemPrompt  String
+  createdAt     DateTime       @default(now())
+  userId        Int
+  user          User           @relation(fields: [userId], references: [id])
+  testCases     TestCase[]
+  experimentModels ExperimentModel[]
+}
+
+model Model {
+  id            Int           @id @default(autoincrement())
+  name          String        @unique
+  apiIdentifier String
+  createdAt     DateTime      @default(now())
+  experimentModels ExperimentModel[]
+  results       Result[]
+}
+
+model TestCase {
+  id              Int        @id @default(autoincrement())
+  userPrompt      String
+  expectedOutput  String?
+  gradingCriteria String?    // e.g., "Exact Match", "Partial Match"
+  createdAt       DateTime   @default(now())
+  experimentId    Int
+  experiment      Experiment @relation(fields: [experimentId], references: [id])
+  results         Result[]
+}
+
+model ExperimentModel {
+  id            Int        @id @default(autoincrement())
+  experimentId  Int
+  modelId       Int
+  experiment    Experiment @relation(fields: [experimentId], references: [id])
+  model         Model      @relation(fields: [modelId], references: [id])
+}
+
+model Result {
+  id            Int        @id @default(autoincrement())
+  response      String
+  responseTime  Float
+  score         Float
+  createdAt     DateTime   @default(now())
+  testCaseId    Int
+  modelId       Int
+  testCase      TestCase   @relation(fields: [testCaseId], references: [id])
+  model         Model      @relation(fields: [modelId], references: [id])
+}
