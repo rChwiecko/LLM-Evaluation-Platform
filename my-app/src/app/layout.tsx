@@ -9,9 +9,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <SidebarProvider>
-          {children}
-        </SidebarProvider>
+        <div className="w-full h-screen flex">
+          <SidebarProvider>{children}</SidebarProvider>
+        </div>
       </body>
     </html>
   );
