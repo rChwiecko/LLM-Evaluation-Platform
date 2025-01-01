@@ -6,12 +6,12 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarHeader,
-  SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
-import Link from "next/link";
 import { useState } from "react";
 import CreateExperiment from "./createExper";
+import RunExperiment from "./runExper";
+import Link from "next/link";
 
 interface Experiment {
   id: string;
@@ -29,62 +29,75 @@ interface Experiment {
 export default function Home() {
   const [inExperimentCreation, setInExperimentCreation] = useState(false);
   const [experiments, setExperiments] = useState<Experiment[]>([]);
+  const [currExperiment, setCurrExperiment] = useState<Experiment | null>(null);
+
+  // Callback for <CreateExperiment />
+  function handleExperimentCreate(newExperiment: Experiment) {
+    setExperiments((prev) => [...prev, newExperiment]);
+    setCurrExperiment(newExperiment);
+    setInExperimentCreation(false);
+  }
+
   return (
-    <div className="w-full flex min-h-screen bg-gray-50">
-      {/* Sidebar */}
-      <Sidebar className="w-64 border-r border-gray-200 bg-white">
+    <div className="flex min-h-screen bg-gray-50 w-full">
+      {/* --- Sidebar --- */}
+      <Sidebar className="w-64 border-r bg-gray-400 shadow-lg">
         <SidebarHeader className="px-4 py-3 text-lg font-semibold border-b border-gray-100">
           Experiments
         </SidebarHeader>
-
         <SidebarContent className="p-4">
           <SidebarGroup className="space-y-2">
             <button
-              onClick={() => setInExperimentCreation(true)}
+              onClick={() => {
+                setInExperimentCreation(true);
+                setCurrExperiment(null);
+              }}
               className="block w-full rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
             >
               Create Experiment
             </button>
 
-            {experiments ? (
-              experiments.map((experiment: Experiment) => (
-                <Link
+            {experiments.length > 0 ? (
+              experiments.map((experiment) => (
+                <div
                   key={experiment.id}
-                  href={`/experiments/${experiment.id}`}
-                  className="block rounded px-4 py-2 text-sm hover:bg-gray-200"
+                  className="block rounded px-4 py-2 text-sm hover:bg-gray-200 cursor-pointer"
+                  onClick={() => {
+                    setInExperimentCreation(false);
+                    setCurrExperiment(experiment);
+                  }}
                 >
                   {experiment.name}
-                </Link>
+                </div>
               ))
             ) : (
-              <p className="rounded px-4 py-2 text-sm text-gray-500">
-                No experiments available.
+              <p className="rounded px-4 py-2 text-sm text-gray-800">
+                No experiments.
               </p>
             )}
           </SidebarGroup>
         </SidebarContent>
-
-        <SidebarFooter className="p-4">
-          {/* Footer content if needed */}
-        </SidebarFooter>
+        <SidebarFooter className="p-4">{/* Footer content */}</SidebarFooter>
       </Sidebar>
 
-      {/* Main Content (fills remaining space) */}
-      <div className="flex-1 flex flex-col">
-        {/* Sidebar toggle */}
-        <div className="p-4">
-          <SidebarTrigger className="p-4 text-sm font-medium" />
+      {/* --- Main Content --- */}
+      <div className="flex-1 flex flex-col w-full">
+        {/* TOP BAR */}
+        <div className="flex items-center px-4 py-3 bg-white shadow-sm">
+          <SidebarTrigger className="px-4 py-2 text-sm font-medium bg-blue-100 hover:bg-blue-200 rounded" />
         </div>
 
-        {/* Content area */}
-        <div className="p-4 flex-1 text-center sticky">
+        {/* MAIN AREA: center the content */}
+        <div className="flex-1 flex items-center justify-center p-8">
           {inExperimentCreation ? (
-            <div className="text-sm font-medium text-gray-800">
-              <CreateExperiment />
+            /* Show the create form */
+            <div className="h-full w-full bg-white shadow-lg rounded p-6">
+              <CreateExperiment onCreate={handleExperimentCreate} />
             </div>
           ) : (
-            <div className="text-sm font-medium text-gray-800">
-              Not yet but this willl soon have content in it
+            /* Show the "run experiment" content, or something else */
+            <div className="h-full w-full bg-white shadow-lg rounded p-6">
+              <RunExperiment experiment={currExperiment} />
             </div>
           )}
         </div>
