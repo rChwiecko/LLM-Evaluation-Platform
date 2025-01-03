@@ -33,6 +33,7 @@ export default function Home() {
 
   // Callback for <CreateExperiment />
   function handleExperimentCreate(newExperiment: Experiment) {
+    newExperiment.id = Math.random().toString(36).substr(2, 9);
     setExperiments((prev) => [...prev, newExperiment]);
     setCurrExperiment(newExperiment);
     setInExperimentCreation(false);

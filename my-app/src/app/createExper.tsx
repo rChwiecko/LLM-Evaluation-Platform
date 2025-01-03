@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { availableModels } from "./models";
 
 interface TestCase {
   id: string;
@@ -29,7 +30,6 @@ const CreateExperiment: React.FC<CreateExperimentProps> = ({ onCreate }) => {
   });
 
   const [errors, setErrors] = useState<{
-    id: boolean;
     name: boolean;
     systemPrompt: boolean;
     model: boolean;
@@ -39,7 +39,6 @@ const CreateExperiment: React.FC<CreateExperimentProps> = ({ onCreate }) => {
       grader: boolean;
     }[];
   }>({
-    id: false,
     name: false,
     systemPrompt: false,
     model: false,
@@ -57,6 +56,11 @@ const CreateExperiment: React.FC<CreateExperimentProps> = ({ onCreate }) => {
   ) {
     const { name, value } = e.target;
     setExperiment((prev) => ({ ...prev, [name]: value }));
+  }
+
+  function handleModelChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const selectedModel = e.target.value;
+    setExperiment((prev) => ({ ...prev, model: selectedModel }));
   }
 
   function handleAddTestCase() {
@@ -114,7 +118,6 @@ const CreateExperiment: React.FC<CreateExperimentProps> = ({ onCreate }) => {
 
     // Build a fresh errors object
     let newErrors = {
-      id: !experiment.id.trim(),
       name: !experiment.name.trim(),
       systemPrompt: !experiment.systemPrompt.trim(),
       model: !experiment.model.trim(),
@@ -135,10 +138,7 @@ const CreateExperiment: React.FC<CreateExperimentProps> = ({ onCreate }) => {
     setErrors(newErrors);
 
     const hasTopLevelError =
-      newErrors.id ||
-      newErrors.name ||
-      newErrors.systemPrompt ||
-      newErrors.model;
+      newErrors.name || newErrors.systemPrompt || newErrors.model;
 
     const hasTestCaseError = newErrors.testCases.some(
       (tcErr) => tcErr.userMessage || tcErr.expectedOutput || tcErr.grader
@@ -159,7 +159,6 @@ const CreateExperiment: React.FC<CreateExperimentProps> = ({ onCreate }) => {
       testCases: [],
     });
     setErrors({
-      id: false,
       name: false,
       systemPrompt: false,
       model: false,
@@ -211,23 +210,28 @@ const CreateExperiment: React.FC<CreateExperimentProps> = ({ onCreate }) => {
               }
             />
           </div>
-
-          <div>
-            <label
-              htmlFor="model"
-              className="block text-sm font-medium text-gray-700"
-            >
-              Model
-            </label>
-            <input
-              type="text"
-              id="model"
-              name="model"
-              value={experiment.model}
-              onChange={handleFieldChange}
-              className={`${getInputClasses(errors.model)} mb-2 border`}
-            />
-          </div>
+        </div>
+        <div>
+          <label
+            htmlFor="model"
+            className="block text-sm font-medium text-gray-700"
+          >
+            Select Model
+          </label>
+          <select
+            id="model"
+            name="model"
+            value={experiment.model}
+            onChange={handleModelChange}
+            className={`${getInputClasses(errors.name)} mb-2 border`}
+          >
+            <option value="">Select a model</option>
+            {availableModels.map((model) => (
+              <option key={model.id} value={model.id}>
+                {model.name} ({model.provider})
+              </option>
+            ))}
+          </select>
         </div>
 
         <hr className="my-6" />
