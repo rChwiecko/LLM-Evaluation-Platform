@@ -1,40 +1,42 @@
 import { NextResponse } from 'next/server';
-import { llama31 } from './models';
+import { llama31, Message } from '../models';
 
-export async function GET(request: Request) {
+export async function POST(request: Request) {
     try {
         // Parse the payload from the request body
-        const { prompt, expectedRes } = await request.json();
+        const { model, prompt, responseExpected, messages }: 
+        { model: string; prompt: string; responseExpected: string; messages: Message[] } = await request.json();
 
         // Validate required fields
-        if (!prompt || !expectedRes) {
+        if (!model || !prompt || !responseExpected || !messages || !Array.isArray(messages)) {
             return NextResponse.json(
-                { error: 'Missing required fields: prompt or expectedRes' },
+                { error: 'Missing required fields: model, prompt, responseExpected, or messages' },
                 { status: 400 }
             );
         }
 
         const startTime = Date.now();
 
-        // Call the model (assume llama31 for now)
-        const modelRes = await llama31([{ role: 'user', content: prompt }]);
+        const modelRes = await llama31(messages);
 
         const endTime = Date.now();
         const responseTime = endTime - startTime;
 
         // Evaluate the response (simple exact match check for now)
-        const passFail = modelRes.trim() === expectedRes.trim() ? 'pass' : 'fail';
+        const passFail = modelRes.trim() === responseExpected.trim() ? true : false;
 
         // Return the response in the required format
         return NextResponse.json({
             model_res: modelRes,
             response_time: responseTime,
-            pass_fail: passFail,
+            metrics: {
+                exactMatch: passFail,
+                pass_fail: passFail ? 'pass' : 'fail',
+            }
         });
-    } catch (error) {
+    } catch (error: any) {
         console.error('Error in GET handler:', error);
 
-        // Return an error response if something goes wrong
         return NextResponse.json(
             { error: 'Failed to process the request', details: error.message },
             { status: 500 }

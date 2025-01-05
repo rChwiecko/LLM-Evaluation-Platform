@@ -28,6 +28,25 @@ export default function RunExperiment({ experiment }: CreateExperimentProps) {
     grader: "exact" as "exact" | "partial" | "llm_match",
   });
 
+  const [testResults, setTestResults] = useState<
+    Record<
+      string,
+      {
+        model_res: string;
+        response_time: number;
+        pass_fail: string;
+        metrics?: {
+          exactMatch?: boolean;
+          pass_fail?: string;
+          partialScore?: number;
+          distance?: number;
+          similarity?: number;
+          reason?: string;
+        };
+      } | null
+    >
+  >({});
+
   const [showTestCaseForm, setShowTestCaseForm] = useState(false);
 
   // Error state for test case fields
@@ -105,17 +124,66 @@ export default function RunExperiment({ experiment }: CreateExperimentProps) {
     );
   }
 
-  function handleRunTestCase(
+  async function handleRunTestCase(
     testCase: Experiment["testCases"][0],
     experiment: Experiment
   ) {
-    console.log("Running test case:", testCase);
-    console.log(experiment.model);
-    console.log(experiment.systemPrompt);
+    const payload = {
+      model: experiment.model,
+      prompt: testCase.userMessage,
+      responseExpected: testCase.expectedOutput,
+      messages: [
+        {
+          role: "system",
+          content: experiment.systemPrompt,
+          name: "system",
+        },
+        {
+          role: "user",
+          content: testCase.userMessage,
+          name: "user",
+        },
+      ],
+    };
+    let url = "";
+    switch (testCase.grader) {
+      case "exact":
+        url = "/api/exact";
+        break;
+      case "partial":
+        url = "/api/partial";
+        break;
+      case "llm_match":
+        url = "/api/llm";
+        break;
+    }
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+
+      // Update testResults state with the result
+      setTestResults((prev) => ({
+        ...prev,
+        [testCase.id]: result,
+      }));
+    } catch (error: any) {
+      console.error("Error running test case:", error);
+    }
   }
 
   return (
-    <div className="bg-white shadow-lg rounded-md p-6 max-w-4xl mx-auto">
+    <div className="bg-white shadow-lg rounded-md p-6 w-11/12 mx-auto">
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold">
           Experiment: {localExperiment.name}
@@ -235,66 +303,145 @@ export default function RunExperiment({ experiment }: CreateExperimentProps) {
         )}
       </div>
 
-      <h2 className="text-xl font-semibold mb-2">Test Cases</h2>
-      {localExperiment.testCases.length === 0 ? (
-        <p className="text-gray-700">No test cases added yet.</p>
-      ) : (
-        <table className="w-full border-collapse border border-gray-300">
-          <thead className="bg-gray-100">
-            <tr>
-              <th className="border border-gray-300 px-4 py-2 text-left">
-                Name
-              </th>
-              <th className="border border-gray-300 px-4 py-2 text-left">
-                Input
-              </th>
-              <th className="border border-gray-300 px-4 py-2 text-left">
-                Expected
-              </th>
-              <th className="border border-gray-300 px-4 py-2 text-left">
-                Grader
-              </th>
-              <th className="border border-gray-300 px-4 py-2 text-left">
-                Actions
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {localExperiment.testCases.map((tc, index) => (
-              <tr key={tc.id} className="hover:bg-gray-50">
-                <td className="border border-gray-300 px-4 py-2">
-                  Test Case {index + 1}
-                </td>
-                <td className="border border-gray-300 px-4 py-2">
-                  {tc.userMessage}
-                </td>
-                <td className="border border-gray-300 px-4 py-2">
-                  {tc.expectedOutput}
-                </td>
-                <td className="border border-gray-300 px-4 py-2">
-                  {tc.grader}
-                </td>
-                <td className="border border-gray-300 px-4 py-2">
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => handleRemoveTestCase(index)}
-                      className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded"
-                    >
-                      Remove
-                    </button>
-                    <button
-                      onClick={() => handleRunTestCase(tc, localExperiment)}
-                      className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded"
-                    >
-                      Run
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+      <div className="mt-6">
+        <h2 className="text-2xl font-semibold mb-4">Test Cases</h2>
+
+        {localExperiment.testCases.length === 0 ? (
+          <p className="text-gray-700">No test cases added yet.</p>
+        ) : (
+          // 1. Wrap table in an overflow container to avoid squishing
+          <div className="">
+            {/* 2. Switch to table-auto so columns size more flexibly */}
+            <table className="table-auto w-full border-collapse border border-gray-300">
+              <thead className="bg-gray-100">
+                <tr>
+                  <th className="border border-gray-300 px-4 py-2 text-left font-medium text-gray-700">
+                    Name
+                  </th>
+                  <th className="border border-gray-300 px-4 py-2 text-left font-medium text-gray-700">
+                    Input
+                  </th>
+                  <th className="border border-gray-300 px-4 py-2 text-left font-medium text-gray-700">
+                    Expected
+                  </th>
+                  <th className="border border-gray-300 px-4 py-2 text-left font-medium text-gray-700">
+                    Grader
+                  </th>
+                  {/* New Metrics column */}
+                  <th className="border border-gray-300 px-4 py-2 text-left font-medium text-gray-700">
+                    Metrics
+                  </th>
+                  <th className="border border-gray-300 px-4 py-2 text-left font-medium text-gray-700">
+                    Actions
+                  </th>
+                  <th className="border border-gray-300 px-4 py-2 text-left font-medium text-gray-700">
+                    Response
+                  </th>
+                  <th className="border border-gray-300 px-4 py-2 text-left font-medium text-gray-700">
+                    Response Time
+                  </th>
+                  <th className="border border-gray-300 px-4 py-2 text-left font-medium text-gray-700">
+                    Pass/Fail
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {localExperiment.testCases.map((tc, index) => {
+                  // Optionally, define a helper function or inline logic to format metrics
+                  const graderType = tc.grader; // e.g. "exact", "partial", or "llm"
+                  const metrics = testResults[tc.id]?.metrics;
+
+                  // Here’s a sample approach with inline logic
+                  let metricsDisplay = "No Metrics";
+                  if (metrics) {
+                    switch (graderType) {
+                      case "exact":
+                        metricsDisplay = `Exact Match: ${
+                          metrics?.exactMatch ? "Yes" : "No"
+                        }`;
+                        break;
+                      case "partial":
+                        metricsDisplay = `Partial Score: ${(
+                          metrics?.partialScore ?? 0
+                        ).toFixed(0)}%\nDistance: ${
+                          metrics?.distance ?? "N/A"
+                        }`;
+                        break;
+                      case "llm_match":
+                        metricsDisplay = `Similarity: ${
+                          metrics?.similarity || "N/A"
+                        }\nReason: ${metrics?.reason || "N/A"}`;
+                        break;
+                      default:
+                        metricsDisplay = "No Metrics";
+                        break;
+                    }
+                  }
+
+                  return (
+                    <tr key={tc.id} className="hover:bg-gray-50">
+                      <td className="border border-gray-300 px-4 py-2">
+                        Test Case {index + 1}
+                      </td>
+                      <td className="border border-gray-300 px-4 py-2">
+                        {tc.userMessage}
+                      </td>
+                      <td className="border border-gray-300 px-4 py-2">
+                        {tc.expectedOutput}
+                      </td>
+                      <td className="border border-gray-300 px-4 py-2">
+                        {graderType}
+                      </td>
+                      {/* Our new Metrics cell. Note whitespace-pre-wrap for multiline */}
+                      <td className="border border-gray-300 px-4 py-2 whitespace-pre-wrap break-words align-top">
+                        {metricsDisplay}
+                      </td>
+                      <td className="border border-gray-300 px-4 py-2">
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleRemoveTestCase(index)}
+                            className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded"
+                          >
+                            Remove
+                          </button>
+                          <button
+                            onClick={() =>
+                              handleRunTestCase(tc, localExperiment)
+                            }
+                            className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded"
+                          >
+                            Run
+                          </button>
+                        </div>
+                      </td>
+                      {/* 3. Use whitespace-pre-wrap and break-words so long text wraps nicely */}
+                      <td className="border border-gray-300 px-4 py-2 whitespace-pre-wrap break-words align-top">
+                        {testResults[tc.id]?.model_res || "Not Run"}
+                      </td>
+                      <td className="border border-gray-300 px-4 py-2">
+                        {testResults[tc.id]?.response_time
+                          ? `${testResults[tc.id]?.response_time}ms`
+                          : "Not Run"}
+                      </td>
+                      <td
+                        className={`border border-gray-300 px-4 py-2 ${
+                          testResults[tc.id]?.metrics?.pass_fail === "pass"
+                            ? "bg-green-100 text-green-800"
+                            : testResults[tc.id]?.metrics?.pass_fail === "fail"
+                            ? "bg-red-100 text-red-800"
+                            : "bg-gray-100 text-gray-800"
+                        }`}
+                      >
+                        {testResults[tc.id]?.metrics?.pass_fail || "Not Run"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
