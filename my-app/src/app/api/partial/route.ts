@@ -42,11 +42,6 @@ function calculateSimilarity(expected: string, actual: string): number {
       [...expectedTokens].filter((token) => actualTokens.has(token))
     );
   
-    console.log("Expected Tokens:", expectedTokens);
-    console.log("Actual Tokens:", actualTokens);
-    console.log("Intersection:", intersection);
-    console.log("Sizes => Expected:", expectedTokens.size, " Intersection:", intersection.size);
-  
     if (expectedTokens.size === 0) {
       return 0;
     }

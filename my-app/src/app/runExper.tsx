@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 
+// Same interface as in page.tsx
 interface Experiment {
   id: string;
   name: string;
@@ -10,46 +11,52 @@ interface Experiment {
     userMessage: string;
     expectedOutput: string;
     grader: "exact" | "partial" | "llm_match";
+    result?: {
+      model_res: string;
+      response_time: number;
+      pass_fail: string;
+      metrics?: {
+        exactMatch?: boolean;
+        pass_fail?: string;
+        partialScore?: number;
+        distance?: number;
+        similarity?: number;
+        reason?: string;
+      };
+    };
   }[];
 }
 
-interface CreateExperimentProps {
+/**
+ * Props:
+ * - experiment: The currently selected experiment (from parent)
+ * - onUpdateExperiment: A callback to let the parent update its state
+ */
+interface RunExperimentProps {
   experiment: Experiment | null;
+  onUpdateExperiment?: (updatedExp: Experiment) => void;
 }
 
-export default function RunExperiment({ experiment }: CreateExperimentProps) {
+export default function RunExperiment({
+  experiment,
+  onUpdateExperiment,
+}: RunExperimentProps) {
+  // Keep a local copy of the experiment for easy manipulation
   const [localExperiment, setLocalExperiment] = useState<Experiment | null>(
     experiment
   );
 
+  // Fields for the "Add Test Case" form
   const [newTestCase, setNewTestCase] = useState({
     userMessage: "",
     expectedOutput: "",
     grader: "exact" as "exact" | "partial" | "llm_match",
   });
 
-  const [testResults, setTestResults] = useState<
-    Record<
-      string,
-      {
-        model_res: string;
-        response_time: number;
-        pass_fail: string;
-        metrics?: {
-          exactMatch?: boolean;
-          pass_fail?: string;
-          partialScore?: number;
-          distance?: number;
-          similarity?: number;
-          reason?: string;
-        };
-      } | null
-    >
-  >({});
-
+  // Show/hide form
   const [showTestCaseForm, setShowTestCaseForm] = useState(false);
 
-  // Error state for test case fields
+  // Track errors for userMessage & expectedOutput
   const [testCaseErrors, setTestCaseErrors] = useState({
     userMessage: false,
     expectedOutput: false,
@@ -59,13 +66,15 @@ export default function RunExperiment({ experiment }: CreateExperimentProps) {
     return <div>No experiments created yet.</div>;
   }
 
+  // ------ Handlers ------
+
   function handleNewTestCaseChange(
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
   ) {
     const { name, value } = e.target;
     setNewTestCase((prev) => ({ ...prev, [name]: value }));
 
-    // Clear error when user starts typing
+    // Clear error as soon as user starts typing
     setTestCaseErrors((prev) => ({ ...prev, [name]: false }));
   }
 
@@ -73,57 +82,75 @@ export default function RunExperiment({ experiment }: CreateExperimentProps) {
     setShowTestCaseForm(true);
   }
 
-  function handleAddTestCase() {
-    const errors = {
-      userMessage: !newTestCase.userMessage.trim(),
-      expectedOutput: !newTestCase.expectedOutput.trim(),
-    };
-
-    setTestCaseErrors(errors);
-
-    // If there are any errors, don't proceed
-    if (errors.userMessage || errors.expectedOutput) {
-      return;
-    }
-
-    const updatedTestCases = [
-      ...localExperiment!.testCases,
-      {
-        id: crypto.randomUUID(),
-        ...newTestCase,
-      },
-    ];
-
-    setLocalExperiment((prev) =>
-      prev ? { ...prev, testCases: updatedTestCases } : prev
-    );
-
+  function handleCloseTestCaseForm() {
+    setShowTestCaseForm(false);
     setNewTestCase({
       userMessage: "",
       expectedOutput: "",
       grader: "exact",
     });
-
-    setShowTestCaseForm(false);
   }
 
-  function handleCloseTestCaseForm() {
-    setShowTestCaseForm(false);
-    newTestCase.userMessage = "";
-    newTestCase.expectedOutput = "";
-  }
+  function handleAddTestCase() {
+    // Validate
+    const errors = {
+      userMessage: !newTestCase.userMessage.trim(),
+      expectedOutput: !newTestCase.expectedOutput.trim(),
+    };
+    setTestCaseErrors(errors);
 
-  function handleRemoveTestCase(index: number): void {
+    if (errors.userMessage || errors.expectedOutput) {
+      return; // stop if invalid
+    }
+
+    // Add to local state
+    const updatedTestCases = [
+      ...(localExperiment?.testCases || []),
+      {
+        id: crypto.randomUUID(),
+        ...newTestCase,
+      },
+    ];
     if (!localExperiment) return;
 
+    const updatedExperiment: Experiment = {
+      ...localExperiment,
+      id: localExperiment.id || crypto.randomUUID(), // Ensure id is defined
+      name: localExperiment.name || "Unnamed Experiment", // Ensure name is defined
+      systemPrompt: localExperiment.systemPrompt || "", // Ensure systemPrompt is defined
+      model: localExperiment.model || "defaultModel", // Ensure model is defined
+      testCases: updatedTestCases,
+    };
+
+    // Update local
+    setLocalExperiment(updatedExperiment);
+
+    // Notify parent (optional, if you want real-time test case updates)
+    onUpdateExperiment?.(updatedExperiment);
+
+    // Reset form
+    handleCloseTestCaseForm();
+  }
+
+  function handleRemoveTestCase(index: number) {
+    if (!localExperiment) return;
     const updatedTestCases = localExperiment.testCases.filter(
       (_, i) => i !== index
     );
-    setLocalExperiment((prev) =>
-      prev ? { ...prev, testCases: updatedTestCases } : prev
-    );
+    const updatedExperiment = {
+      ...localExperiment,
+      testCases: updatedTestCases,
+    };
+
+    setLocalExperiment(updatedExperiment);
+
+    // Also tell the parent, if needed
+    onUpdateExperiment?.(updatedExperiment);
   }
 
+  /**
+   * This is called when user clicks "Run" on a test case
+   */
   async function handleRunTestCase(
     testCase: Experiment["testCases"][0],
     experiment: Experiment
@@ -133,18 +160,12 @@ export default function RunExperiment({ experiment }: CreateExperimentProps) {
       prompt: testCase.userMessage,
       responseExpected: testCase.expectedOutput,
       messages: [
-        {
-          role: "system",
-          content: experiment.systemPrompt,
-          name: "system",
-        },
-        {
-          role: "user",
-          content: testCase.userMessage,
-          name: "user",
-        },
+        { role: "system", content: experiment.systemPrompt, name: "system" },
+        { role: "user", content: testCase.userMessage, name: "user" },
       ],
     };
+
+    // Route depends on grader type
     let url = "";
     switch (testCase.grader) {
       case "exact":
@@ -157,12 +178,11 @@ export default function RunExperiment({ experiment }: CreateExperimentProps) {
         url = "/api/llm";
         break;
     }
+
     try {
       const response = await fetch(url, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
@@ -170,32 +190,42 @@ export default function RunExperiment({ experiment }: CreateExperimentProps) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
+      // The returned result presumably has { model_res, response_time, pass_fail, metrics... }
       const result = await response.json();
 
-      // Update testResults state with the result
-      setTestResults((prev) => ({
-        ...prev,
-        [testCase.id]: result,
-      }));
-    } catch (error: any) {
+      // Update the local experiment with the new test result
+      setLocalExperiment((prev) => {
+        if (!prev) return null;
+
+        const updatedTestCases = prev.testCases.map((tc) =>
+          tc.id === testCase.id ? { ...tc, result } : tc
+        );
+        const updatedExperiment = { ...prev, testCases: updatedTestCases };
+
+        // NOTE: This is the callback that triggers parent state update,
+        // but it's called inside an event handler's async callback -> SAFE
+        onUpdateExperiment?.(updatedExperiment);
+
+        return updatedExperiment;
+      });
+    } catch (error) {
       console.error("Error running test case:", error);
     }
   }
 
+  // ------ Render ------
   return (
     <div className="bg-white shadow-lg rounded-md p-6 w-11/12 mx-auto">
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold">
-          Experiment: {localExperiment.name}
-        </h1>
+        <h1 className="text-2xl font-bold">Experiment: {localExperiment.name}</h1>
       </div>
+
       <div className="flex gap-6 mb-4 justify-between">
-        <p className="font-semibold">
-          System Prompt: {localExperiment.systemPrompt}
-        </p>
+        <p className="font-semibold">System Prompt: {localExperiment.systemPrompt}</p>
         <p className="font-semibold">Model: {localExperiment.model}</p>
       </div>
 
+      {/* Add Test Case Form */}
       <div className="mt-6 border-t pt-4">
         {!showTestCaseForm && (
           <div className="mb-4">
@@ -212,6 +242,7 @@ export default function RunExperiment({ experiment }: CreateExperimentProps) {
         {showTestCaseForm && (
           <div className="bg-gray-50 border rounded-md p-4">
             <div className="flex gap-4 items-center mb-4">
+              {/* USER MESSAGE */}
               <div className="flex-1">
                 <label
                   htmlFor="userMessage"
@@ -237,6 +268,8 @@ export default function RunExperiment({ experiment }: CreateExperimentProps) {
                   </p>
                 )}
               </div>
+
+              {/* EXPECTED OUTPUT */}
               <div className="flex-1">
                 <label
                   htmlFor="expectedOutput"
@@ -262,6 +295,8 @@ export default function RunExperiment({ experiment }: CreateExperimentProps) {
                   </p>
                 )}
               </div>
+
+              {/* GRADER */}
               <div>
                 <label
                   htmlFor="grader"
@@ -281,15 +316,18 @@ export default function RunExperiment({ experiment }: CreateExperimentProps) {
                   <option value="llm_match">LLM Match</option>
                 </select>
               </div>
+
+              {/* CANCEL */}
               <button
                 type="button"
-                onClick={() => handleCloseTestCaseForm()}
+                onClick={handleCloseTestCaseForm}
                 className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded h-10 self-end"
               >
                 Remove
               </button>
             </div>
 
+            {/* Submit */}
             <div className="flex justify-end">
               <button
                 type="button"
@@ -303,20 +341,19 @@ export default function RunExperiment({ experiment }: CreateExperimentProps) {
         )}
       </div>
 
+      {/* Test Cases Table */}
       <div className="mt-6">
         <h2 className="text-2xl font-semibold mb-4">Test Cases</h2>
 
         {localExperiment.testCases.length === 0 ? (
           <p className="text-gray-700">No test cases added yet.</p>
         ) : (
-          // 1. Wrap table in an overflow container to avoid squishing
-          <div className="">
-            {/* 2. Switch to table-auto so columns size more flexibly */}
+          <div>
             <table className="table-auto w-full border-collapse border border-gray-300">
               <thead className="bg-gray-100">
                 <tr>
                   <th className="border border-gray-300 px-4 py-2 text-left font-medium text-gray-700">
-                    Name
+                    #
                   </th>
                   <th className="border border-gray-300 px-4 py-2 text-left font-medium text-gray-700">
                     Input
@@ -327,10 +364,12 @@ export default function RunExperiment({ experiment }: CreateExperimentProps) {
                   <th className="border border-gray-300 px-4 py-2 text-left font-medium text-gray-700">
                     Grader
                   </th>
-                  {/* New Metrics column */}
+
+                  {/* METRICS COLUMN */}
                   <th className="border border-gray-300 px-4 py-2 text-left font-medium text-gray-700">
                     Metrics
                   </th>
+
                   <th className="border border-gray-300 px-4 py-2 text-left font-medium text-gray-700">
                     Actions
                   </th>
@@ -338,7 +377,7 @@ export default function RunExperiment({ experiment }: CreateExperimentProps) {
                     Response
                   </th>
                   <th className="border border-gray-300 px-4 py-2 text-left font-medium text-gray-700">
-                    Response Time
+                    Time
                   </th>
                   <th className="border border-gray-300 px-4 py-2 text-left font-medium text-gray-700">
                     Pass/Fail
@@ -347,30 +386,27 @@ export default function RunExperiment({ experiment }: CreateExperimentProps) {
               </thead>
               <tbody>
                 {localExperiment.testCases.map((tc, index) => {
-                  // Optionally, define a helper function or inline logic to format metrics
-                  const graderType = tc.grader; // e.g. "exact", "partial", or "llm"
-                  const metrics = testResults[tc.id]?.metrics;
-
-                  // Here’s a sample approach with inline logic
+                  // Optional: compute a user-friendly metrics display
+                  const { metrics } = tc.result || {};
                   let metricsDisplay = "No Metrics";
                   if (metrics) {
-                    switch (graderType) {
+                    switch (tc.grader) {
                       case "exact":
                         metricsDisplay = `Exact Match: ${
-                          metrics?.exactMatch ? "Yes" : "No"
+                          metrics.exactMatch ? "Yes" : "No"
                         }`;
                         break;
                       case "partial":
-                        metricsDisplay = `Partial Score: ${(
-                          metrics?.partialScore ?? 0
-                        ).toFixed(0)}%\nDistance: ${
-                          metrics?.distance ?? "N/A"
+                        metricsDisplay = `Partial Score: ${
+                          metrics.partialScore ?? 0
+                        }%\nDistance: ${
+                          metrics.distance ?? "N/A"
                         }`;
                         break;
                       case "llm_match":
                         metricsDisplay = `Similarity: ${
-                          metrics?.similarity || "N/A"
-                        }\nReason: ${metrics?.reason || "N/A"}`;
+                          metrics.similarity ?? "N/A"
+                        }\nReason: ${metrics.reason ?? "N/A"}`;
                         break;
                       default:
                         metricsDisplay = "No Metrics";
@@ -390,12 +426,15 @@ export default function RunExperiment({ experiment }: CreateExperimentProps) {
                         {tc.expectedOutput}
                       </td>
                       <td className="border border-gray-300 px-4 py-2">
-                        {graderType}
+                        {tc.grader}
                       </td>
-                      {/* Our new Metrics cell. Note whitespace-pre-wrap for multiline */}
+
+                      {/* METRICS CELL */}
                       <td className="border border-gray-300 px-4 py-2 whitespace-pre-wrap break-words align-top">
                         {metricsDisplay}
                       </td>
+
+                      {/* Actions */}
                       <td className="border border-gray-300 px-4 py-2">
                         <div className="flex gap-2">
                           <button
@@ -405,34 +444,37 @@ export default function RunExperiment({ experiment }: CreateExperimentProps) {
                             Remove
                           </button>
                           <button
-                            onClick={() =>
-                              handleRunTestCase(tc, localExperiment)
-                            }
+                            onClick={() => handleRunTestCase(tc, localExperiment)}
                             className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded"
                           >
                             Run
                           </button>
                         </div>
                       </td>
-                      {/* 3. Use whitespace-pre-wrap and break-words so long text wraps nicely */}
+
+                      {/* Response */}
                       <td className="border border-gray-300 px-4 py-2 whitespace-pre-wrap break-words align-top">
-                        {testResults[tc.id]?.model_res || "Not Run"}
+                        {tc.result?.model_res || "Not Run"}
                       </td>
+
+                      {/* Time */}
                       <td className="border border-gray-300 px-4 py-2">
-                        {testResults[tc.id]?.response_time
-                          ? `${testResults[tc.id]?.response_time}ms`
+                        {tc.result?.response_time
+                          ? `${tc.result.response_time} ms`
                           : "Not Run"}
                       </td>
+
+                      {/* Pass/Fail */}
                       <td
                         className={`border border-gray-300 px-4 py-2 ${
-                          testResults[tc.id]?.metrics?.pass_fail === "pass"
+                          tc.result?.metrics?.pass_fail === "pass"
                             ? "bg-green-100 text-green-800"
-                            : testResults[tc.id]?.metrics?.pass_fail === "fail"
+                            : tc.result?.metrics?.pass_fail === "fail"
                             ? "bg-red-100 text-red-800"
                             : "bg-gray-100 text-gray-800"
                         }`}
                       >
-                        {testResults[tc.id]?.metrics?.pass_fail || "Not Run"}
+                        {tc.result?.metrics?.pass_fail || "Not Run"}
                       </td>
                     </tr>
                   );

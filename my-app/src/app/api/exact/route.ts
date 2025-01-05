@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { llama31, Message } from '../models';
+import { llama31, llama33vers, Message } from '../models';
 
 export async function POST(request: Request) {
     try {
@@ -17,7 +17,15 @@ export async function POST(request: Request) {
 
         const startTime = Date.now();
 
-        const modelRes = await llama31(messages);
+        let modelRes = "";
+        switch(model){
+            case "llama-3.1-70b-versatile":
+                modelRes = await llama31(messages);
+                break;
+            case "llama-3.3-70b-versatile":
+                modelRes = await llama33vers(messages);
+                break;
+        }
 
         const endTime = Date.now();
         const responseTime = endTime - startTime;
